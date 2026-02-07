@@ -1,4 +1,4 @@
-package org.jokbit.api;
+package org.jokbit.InsConfig.api;
 
 import com.mojang.logging.LogUtils;
 import org.jokbit.InsConfig.helper.InsConfigHelper;
@@ -8,8 +8,8 @@ public class InsConfigApi {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    public static void insconfig(String group) {
-        LOGGER.info("InsConfigApi insconfig group: {}", group);
-        InsConfigHelper.insconfig(group);
+    public static void insconfig(String mirror) {
+        LOGGER.info("InsConfigApi insconfig mirror: {}", mirror);
+        InsConfigHelper.insconfig(mirror, (successSet) -> {});
     }
 }
