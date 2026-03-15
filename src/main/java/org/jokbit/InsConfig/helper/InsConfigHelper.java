@@ -10,6 +10,7 @@ import net.minecraftforge.fml.config.ConfigTracker;
 import net.minecraftforge.fml.config.IConfigEvent;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.loading.FMLPaths;
+import org.jetbrains.annotations.NotNull;
 import org.jokbit.InsConfig.Config;
 import org.jokbit.InsConfig.core.ConfigFileType;
 import org.jokbit.InsConfig.ex.InvocationException;
@@ -48,13 +49,7 @@ public class InsConfigHelper {
         Iterator<Path> it = insConfigSet.iterator();
         Set<Path> successSet = new HashSet<>();
         ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
-        Map<Path, ModConfig> configMap = ConfigTracker.INSTANCE
-                .fileMap()
-                .values()
-                .stream()
-                .map(modConfig -> Map.entry(FMLPaths.CONFIGDIR.get().relativize(modConfig.getFullPath()), modConfig))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (modConfig, modConfig2) -> modConfig));
-
+        Map<String, ModConfig> configMap = getModConfigMap();
         service.scheduleWithFixedDelay(() -> {
             if (it.hasNext()) {
                 Path path = it.next();
@@ -62,9 +57,10 @@ public class InsConfigHelper {
                 try {
                     Path insconfigPath = INS_CONFIG_DIR.resolve(mirrorPath).resolve(path);
                     Path originConfigPath = FMLPaths.CONFIGDIR.get().resolve(path);
-                    if (path.toString().endsWith(ConfigFileType.SUFFIX_TOML)) {
-                        if (configMap.containsKey(path)) {
-                            res = insconfigStandardToml(insconfigPath, configMap.get(path));
+                    String pathKey = path.toString();
+                    if (pathKey.endsWith(ConfigFileType.SUFFIX_TOML)) {
+                        if (configMap.containsKey(pathKey)) {
+                            res = insconfigStandardToml(insconfigPath, configMap.get(pathKey));
                         } else {
                             res = insconfigCustomToml(insconfigPath, originConfigPath);
                         }
@@ -82,6 +78,42 @@ public class InsConfigHelper {
                 then.accept(Set.copyOf(successSet));
             }
         }, 0L, 50L, TimeUnit.MILLISECONDS);
+    }
+
+    private static @NotNull Map<String, ModConfig> getModConfigMap() {
+        return ConfigTracker.INSTANCE
+                .configSets()
+                .entrySet()
+                .stream()
+                .filter(entry -> entry.getKey() != ModConfig.Type.SERVER)
+                .map(Map.Entry::getValue)
+                .flatMap(Set::stream)
+                .filter(modConfig -> modConfig.getConfigData() != null)
+                .map(modConfig -> {
+                    Path configDir = FMLPaths.CONFIGDIR.get();
+                    Path fullPath = modConfig.getFullPath();
+                    String relativePathStr;
+
+                    try {
+                        relativePathStr = configDir.relativize(fullPath).toString();
+                    } catch (IllegalArgumentException e) {
+                        String fullPathStr = fullPath.toAbsolutePath().toString();
+                        String configDirStr = configDir.toAbsolutePath().toString();
+
+                        int index = fullPathStr.indexOf(configDirStr);
+                        if (index != -1) {
+                            relativePathStr = fullPathStr.substring(index + configDirStr.length());
+                            if (relativePathStr.startsWith(java.io.File.separator)) {
+                                relativePathStr = relativePathStr.substring(1);
+                            }
+                        } else {
+                            relativePathStr = fullPath.getFileName().toString();
+                            LOGGER.warn("Could not resolve relative path for: {}, using filename instead.", fullPathStr);
+                        }
+                    }
+                    return Map.entry(relativePathStr, modConfig);
+                })
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (modConfig, modConfig2) -> modConfig));
     }
 
     public static boolean insconfigStandardToml(Path insconfigPath, ModConfig modConfig) {
