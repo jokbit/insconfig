@@ -48,6 +48,13 @@ public class InsConfigHelper {
         Iterator<Path> it = insConfigSet.iterator();
         Set<Path> successSet = new HashSet<>();
         ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
+        Map<Path, ModConfig> configMap = ConfigTracker.INSTANCE
+                .fileMap()
+                .values()
+                .stream()
+                .map(modConfig -> Map.entry(FMLPaths.CONFIGDIR.get().relativize(modConfig.getFullPath()), modConfig))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (modConfig, modConfig2) -> modConfig));
+
         service.scheduleWithFixedDelay(() -> {
             if (it.hasNext()) {
                 Path path = it.next();
@@ -56,7 +63,11 @@ public class InsConfigHelper {
                     Path insconfigPath = INS_CONFIG_DIR.resolve(mirrorPath).resolve(path);
                     Path originConfigPath = FMLPaths.CONFIGDIR.get().resolve(path);
                     if (path.toString().endsWith(ConfigFileType.SUFFIX_TOML)) {
-                        res = insconfigToml(insconfigPath, originConfigPath);
+                        if (configMap.containsKey(path)) {
+                            res = insconfigStandardToml(insconfigPath, configMap.get(path));
+                        } else {
+                            res = insconfigCustomToml(insconfigPath, originConfigPath);
+                        }
                     } else {
                         res = insconfigOther(insconfigPath, originConfigPath);
                     }
@@ -71,20 +82,6 @@ public class InsConfigHelper {
                 then.accept(Set.copyOf(successSet));
             }
         }, 0L, 50L, TimeUnit.MILLISECONDS);
-    }
-
-    public static boolean insconfigToml(Path insconfigPath, Path originConfigPath) {
-        if (Files.notExists(insconfigPath) | Files.notExists(originConfigPath)) {
-            return false;
-        }
-        ModConfig modConfig = ConfigTracker.INSTANCE
-                .fileMap()
-                .get(insconfigPath.getFileName().toString());
-        if (modConfig != null) {
-            return insconfigStandardToml(insconfigPath, modConfig);
-        } else {
-            return insconfigCustomToml(insconfigPath, originConfigPath);
-        }
     }
 
     public static boolean insconfigStandardToml(Path insconfigPath, ModConfig modConfig) {
@@ -104,11 +101,9 @@ public class InsConfigHelper {
             }
 
             if (modConfig.getSpec() instanceof ForgeConfigSpec spec) {
-                LOGGER.info("insconfig ForgeConfigSpec");
                 spec.setConfig(originConfig);
                 spec.save();
             } else {
-                LOGGER.info("insconfig spec");
                 modConfig.getSpec().acceptConfig(originConfig);
             }
 
@@ -205,5 +200,17 @@ public class InsConfigHelper {
         } catch (IOException e) {
             LOGGER.error("appendModifyDescription err: {}", path);
         }
+    }
+
+    public static void test() {
+        Set<String> modConfigSet = ConfigTracker.INSTANCE
+                .configSets()
+                .values()
+                .stream()
+                .flatMap(Set::stream)
+                .map(ModConfig::getFileName)
+                .collect(Collectors.toUnmodifiableSet());
+
+        LOGGER.info("insconfig test configs: {}", modConfigSet);
     }
 }
